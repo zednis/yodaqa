@@ -32,6 +32,7 @@ import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.action.search.SearchType;
 import org.elasticsearch.client.Client;
 import org.elasticsearch.client.transport.TransportClient;
+import org.elasticsearch.common.lang3.StringUtils;
 import org.elasticsearch.common.settings.ImmutableSettings;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.transport.InetSocketTransportAddress;
@@ -105,19 +106,22 @@ public class EsDocPrimarySearch extends JCasMultiplier_ImplBase {
         Collection<Clue> clues = JCasUtil.select(aJCas, Clue.class);
         String[] terms = cluesToTerms(clues);
 
-        logger.log(Level.INFO, "querying elasticsearch for: "+Arrays.toString(terms));
+        String queryString = StringUtils.join(terms, " OR ");
+
+        logger.log(Level.INFO, "querying elasticsearch for: "+queryString);
 
         SearchResponse response = esClient
                 .prepareSearch(esIndex)
                 .setTypes(esType)
                 .setSearchType(SearchType.DFS_QUERY_THEN_FETCH)
-                .setQuery(QueryBuilders.termsQuery("multi", terms))
+                .setQuery(QueryBuilders.matchQuery("_all", queryString))
                 .setFrom(0).setSize(hitListSize).setExplain(true)
                 .execute()
                 .actionGet();
 
         logger.log(Level.INFO, "elasticsearch response status: "+response.status().name());
         results = response.getHits().iterator();
+        logger.log(Level.INFO, "elasticsearch hits: "+response.getHits().totalHits());
         index = 0;
     }
 
@@ -132,12 +136,6 @@ public class EsDocPrimarySearch extends JCasMultiplier_ImplBase {
         SearchHit hit = results.hasNext() ? results.next() : null;
         index++;
 
-        String sourceTitle = (hit != null && hit.getSource()!= null)
-                ? hit.getSource().getOrDefault("title", "NONE").toString()
-                : "NONE";
-
-        logger.log(Level.INFO, "FOUND: "+sourceTitle);
-
         JCas jcas = getEmptyJCas();
 
         try {
@@ -148,12 +146,19 @@ public class EsDocPrimarySearch extends JCasMultiplier_ImplBase {
             jcas.createView("Answer");
             JCas canAnswerView = jcas.getView("Answer");
 
-            if (hit != null && hit.getSource() != null) {
+            String sourceTitle = (hit != null && hit.getSource()!= null)
+                    ? hit.getSource().getOrDefault("title", "NONE").toString()
+                    : "NONE";
+
+            if (!sourceTitle.equals("NONE")) {
+                logger.log(Level.INFO, "creating ES answer");
                 documentToAnswer(canAnswerView, hit, questionView);
             } else {
+                logger.log(Level.INFO, "creating empty answer");
                 emptyAnswer(canAnswerView);
             }
         } catch (Exception e) {
+            logger.log(Level.INFO, "in catch block of EsDocPrimarySearch:next");
             jcas.release();
             throw new AnalysisEngineProcessException(e);
         }
@@ -187,16 +192,15 @@ public class EsDocPrimarySearch extends JCasMultiplier_ImplBase {
     protected void documentToAnswer(JCas jcas, SearchHit doc, JCas questionView) throws AnalysisEngineProcessException {
 
         String id = doc.getId();
-        String title = doc.getSource().getOrDefault("title", "").toString();
-        String uri = doc.getSource().getOrDefault("uri","").toString();
-
-        String docSource = doc.getSourceAsString();
-
         float score = doc.getScore();
 
-        logger.log(Level.FINER, "FOUND: "+ id + " " + title);
+        String title = doc.getSource().getOrDefault("title", "").toString();
+        String uri = doc.getSource().getOrDefault("uri","").toString();
+        String docAbstract = doc.getSource().getOrDefault("abstract", "").toString();
 
-        jcas.setDocumentText(docSource);
+        logger.log(Level.INFO, "FOUND: "+ uri + " " + title);
+
+        jcas.setDocumentText(docAbstract);
         jcas.setDocumentLanguage("en");
 
         AnswerSource ac = new AnswerSourceAguAbstract(AnswerSourceAguAbstract.ORIGIN_DOCUMENT, title, id);
