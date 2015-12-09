@@ -2,6 +2,7 @@ package cz.brmlab.yodaqa.pipeline.esdoc;
 
 import cz.brmlab.yodaqa.analysis.ansscore.AF;
 import cz.brmlab.yodaqa.analysis.ansscore.AnswerFV;
+import cz.brmlab.yodaqa.flow.asb.MultiThreadASB;
 import cz.brmlab.yodaqa.flow.dashboard.AnswerIDGenerator;
 import cz.brmlab.yodaqa.flow.dashboard.AnswerSource;
 import cz.brmlab.yodaqa.flow.dashboard.AnswerSourceAguAbstract;
@@ -13,6 +14,7 @@ import cz.brmlab.yodaqa.model.Question.CluePhrase;
 import cz.brmlab.yodaqa.model.CandidateAnswer.AnswerInfo;
 import cz.brmlab.yodaqa.model.CandidateAnswer.AnswerResource;
 import cz.brmlab.yodaqa.model.SearchResult.ResultInfo;
+import org.apache.solr.common.SolrDocument;
 import org.apache.uima.UimaContext;
 import org.apache.uima.analysis_engine.AnalysisEngineProcessException;
 import org.apache.uima.cas.AbstractCas;
@@ -47,8 +49,6 @@ public class EsDocPrimarySearch extends JCasMultiplier_ImplBase {
 
     protected JCas questionView;
 
-    //protected Node esNode;
-
     protected Client esClient;
     protected Iterator<SearchHit> results = Collections.emptyIterator();
 
@@ -64,6 +64,8 @@ public class EsDocPrimarySearch extends JCasMultiplier_ImplBase {
     @ConfigurationParameter(name = "hitlist-size", mandatory = false, defaultValue = "20")
     protected int hitListSize;
 
+    protected int index;
+
     @Override
     public void initialize(UimaContext context) throws ResourceInitializationException {
         super.initialize(context);
@@ -78,27 +80,27 @@ public class EsDocPrimarySearch extends JCasMultiplier_ImplBase {
             esClient = new TransportClient(settings)
                     .addTransportAddress(new InetSocketTransportAddress("localhost", 9300));
 
-            //esNode = nodeBuilder().clusterName(esClusterName).client(true).node();
-            //esClient = esNode.client();
-
             logger.log(Level.INFO, "connected to elasticsearch");
 
         } catch (Exception e) {
             logger.log(Level.SEVERE, e.getMessage());
+            if(esClient != null) { esClient.close(); }
             throw new ResourceInitializationException(e);
         }
     }
 
     @Override
     public void destroy() {
+        logger.log(Level.INFO, "in EsDocPrimarySearch:destroy");
+        if(esClient != null) { esClient.close(); }
         super.destroy();
-        if(esClient != null) {
-            esClient.close();
-        }
     }
 
     @Override
     public void process(JCas aJCas) throws AnalysisEngineProcessException {
+
+        logger.log(Level.INFO, "in EsDocPrimarySearch:process");
+        questionView = aJCas;
 
         Collection<Clue> clues = JCasUtil.select(aJCas, Clue.class);
         String[] terms = cluesToTerms(clues);
@@ -115,23 +117,26 @@ public class EsDocPrimarySearch extends JCasMultiplier_ImplBase {
                 .actionGet();
 
         logger.log(Level.INFO, "elasticsearch response status: "+response.status().name());
-
         results = response.getHits().iterator();
+        index = 0;
     }
 
     @Override
     public boolean hasNext() throws AnalysisEngineProcessException {
-        return results.hasNext();
+        return results.hasNext() || index == 0;
     }
 
     @Override
     public AbstractCas next() throws AnalysisEngineProcessException {
 
-        logger.log(Level.INFO, "");
+        SearchHit hit = results.hasNext() ? results.next() : null;
+        index++;
 
-        if(!results.hasNext()) { return null; }
+        String sourceTitle = (hit != null && hit.getSource()!= null)
+                ? hit.getSource().getOrDefault("title", "NONE").toString()
+                : "NONE";
 
-        SearchHit hit = results.next();
+        logger.log(Level.INFO, "FOUND: "+sourceTitle);
 
         JCas jcas = getEmptyJCas();
 
@@ -143,7 +148,7 @@ public class EsDocPrimarySearch extends JCasMultiplier_ImplBase {
             jcas.createView("Answer");
             JCas canAnswerView = jcas.getView("Answer");
 
-            if (hit != null) {
+            if (hit != null && hit.getSource() != null) {
                 documentToAnswer(canAnswerView, hit, questionView);
             } else {
                 emptyAnswer(canAnswerView);
@@ -156,16 +161,17 @@ public class EsDocPrimarySearch extends JCasMultiplier_ImplBase {
 
     }
 
-    static protected ResultInfo emptyResultInfo(JCas jcas) {
+    protected ResultInfo emptyResultInfo(JCas jcas) {
         ResultInfo ri = new ResultInfo(jcas);
         ri.setDocumentTitle("");
+        ri.setIsLast(index);
         ri.setOrigin("cz.brmlab.yodaqa.pipeline.esdoc.EsDocPrimarySearch");
         return ri;
     }
 
-    static protected AnswerInfo emptyAnswerInfo(JCas jcas) {
+    protected AnswerInfo emptyAnswerInfo(JCas jcas) {
         AnswerInfo ai = new AnswerInfo(jcas);
-//        ai.setIsLast(1);
+        ai.setIsLast(1);
         return ai;
     }
 
@@ -179,16 +185,16 @@ public class EsDocPrimarySearch extends JCasMultiplier_ImplBase {
     protected void documentToAnswer(JCas jcas, SearchHit doc, JCas questionView) throws AnalysisEngineProcessException {
 
         String id = doc.getId();
-        String title = doc.field("title").getValue().toString();
-        title = (title != null) ? title.trim() : "";
+        String title = doc.getSource().getOrDefault("title", "").toString();
+        String uri = doc.getSource().getOrDefault("uri","").toString();
 
-        String uri = doc.field("uri").getValue().toString();
+        String docSource = doc.getSourceAsString();
 
         float score = doc.getScore();
 
         logger.log(Level.FINER, "FOUND: "+ id + " " + title);
 
-        jcas.setDocumentText(title.replaceAll("\\s+\\([^)]*\\)\\s*$", ""));
+        jcas.setDocumentText(docSource);
         jcas.setDocumentLanguage("en");
 
         AnswerSource ac = new AnswerSourceAguAbstract(AnswerSourceAguAbstract.ORIGIN_DOCUMENT, title, id);
@@ -197,6 +203,8 @@ public class EsDocPrimarySearch extends JCasMultiplier_ImplBase {
         AnsweringDocTitle adt = new AnsweringDocTitle(SnippetIDGenerator.getInstance().generateID(), sourceID);
         QuestionDashboard.getInstance().get(questionView).addSnippet(adt);
 
+        int i = !results.hasNext() ? index : 0;
+
         ResultInfo ri = new ResultInfo(jcas);
         ri.setDocumentId(id);
         ri.setDocumentTitle(title);
@@ -204,12 +212,12 @@ public class EsDocPrimarySearch extends JCasMultiplier_ImplBase {
         ri.setSource(esClusterName);
         ri.setSourceID(sourceID);
         ri.setOrigin("cz.brmlab.yodaqa.pipeline.esdoc.EsDocPrimarySearch");
-//        ri.setIsLast(isLast);
+        ri.setIsLast(i);
         ri.addToIndexes();
 
         AnswerFV fv = new AnswerFV();
         fv.setFeature(AF.Occurences, 1.0);
-//        fv.setFeature(AF.ResultRR, 1 / ((float) index));
+        fv.setFeature(AF.ResultRR, 1 / ((float) index));
         fv.setFeature(AF.ResultLogScore, Math.log(1 + ri.getRelevance()));
         fv.setFeature(AF.OriginDocTitle, 1.0);
 
@@ -222,7 +230,7 @@ public class EsDocPrimarySearch extends JCasMultiplier_ImplBase {
         AnswerInfo ai = new AnswerInfo(jcas);
         ai.setFeatures(fv.toFSArray(jcas));
         ai.setResources(FSCollectionFactory.createFSArray(jcas, ars));
-//        ai.setIsLast(1);
+        ai.setIsLast(1);
         ai.setSnippetIDs(new IntegerArray(jcas, 1));
         ai.setSnippetIDs(0, adt.getSnippetID());
         ai.setAnswerID(AnswerIDGenerator.getInstance().generateID());
@@ -230,11 +238,13 @@ public class EsDocPrimarySearch extends JCasMultiplier_ImplBase {
     }
 
     protected static void copyQuestion(JCas src, JCas dest) throws Exception {
+        assert src != null;
         CasCopier copier = new CasCopier(src.getCas(), dest.getCas());
         copier.copyCasView(src.getCas(), dest.getCas(), true);
     }
 
     protected static String[] cluesToTerms(Collection<Clue> clues) {
+        assert clues != null;
         List<String> terms = new ArrayList<String>(clues.size());
         for (Clue clue : clues) {
             if (clue instanceof CluePhrase)
@@ -242,5 +252,10 @@ public class EsDocPrimarySearch extends JCasMultiplier_ImplBase {
             terms.add(clue.getLabel());
         }
         return terms.toArray(new String[terms.size()]);
+    }
+
+    @Override
+    public int getCasInstancesRequired() {
+        return MultiThreadASB.maxJobs * 2;
     }
 }
