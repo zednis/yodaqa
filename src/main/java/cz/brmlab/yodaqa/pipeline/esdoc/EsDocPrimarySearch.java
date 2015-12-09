@@ -166,12 +166,14 @@ public class EsDocPrimarySearch extends JCasMultiplier_ImplBase {
         ri.setDocumentTitle("");
         ri.setIsLast(index);
         ri.setOrigin("cz.brmlab.yodaqa.pipeline.esdoc.EsDocPrimarySearch");
+        ri.addToIndexes();
         return ri;
     }
 
     protected AnswerInfo emptyAnswerInfo(JCas jcas) {
         AnswerInfo ai = new AnswerInfo(jcas);
         ai.setIsLast(1);
+        ai.addToIndexes();
         return ai;
     }
 
