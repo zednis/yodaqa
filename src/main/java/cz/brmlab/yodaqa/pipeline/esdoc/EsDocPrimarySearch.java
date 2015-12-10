@@ -14,7 +14,6 @@ import cz.brmlab.yodaqa.model.Question.CluePhrase;
 import cz.brmlab.yodaqa.model.CandidateAnswer.AnswerInfo;
 import cz.brmlab.yodaqa.model.CandidateAnswer.AnswerResource;
 import cz.brmlab.yodaqa.model.SearchResult.ResultInfo;
-import org.apache.solr.common.SolrDocument;
 import org.apache.uima.UimaContext;
 import org.apache.uima.analysis_engine.AnalysisEngineProcessException;
 import org.apache.uima.cas.AbstractCas;
@@ -37,12 +36,9 @@ import org.elasticsearch.common.settings.ImmutableSettings;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.transport.InetSocketTransportAddress;
 import org.elasticsearch.index.query.QueryBuilders;
-import org.elasticsearch.node.Node;
 import org.elasticsearch.search.SearchHit;
 
 import java.util.*;
-
-import static org.elasticsearch.node.NodeBuilder.nodeBuilder;
 
 public class EsDocPrimarySearch extends JCasMultiplier_ImplBase {
 
@@ -146,9 +142,7 @@ public class EsDocPrimarySearch extends JCasMultiplier_ImplBase {
             jcas.createView("Answer");
             JCas canAnswerView = jcas.getView("Answer");
 
-            String sourceTitle = (hit != null && hit.getSource()!= null)
-                    ? hit.getSource().getOrDefault("title", "NONE").toString()
-                    : "NONE";
+            String sourceTitle = getSourceFieldValueOrDefault(hit, "title", "NONE");
 
             if (!sourceTitle.equals("NONE")) {
                 logger.log(Level.INFO, "creating ES answer");
@@ -189,14 +183,19 @@ public class EsDocPrimarySearch extends JCasMultiplier_ImplBase {
         emptyResultInfo(jcas);
     }
 
+    protected String getSourceFieldValueOrDefault(SearchHit hit, String fieldname, String defaultValue) {
+        return (hit != null && hit.getSource() != null && hit.getSource().containsKey(fieldname))
+                ? hit.getSource().get(fieldname).toString()
+                : defaultValue;
+    }
+
     protected void documentToAnswer(JCas jcas, SearchHit doc, JCas questionView) throws AnalysisEngineProcessException {
 
         String id = doc.getId();
         float score = doc.getScore();
-
-        String title = doc.getSource().getOrDefault("title", "").toString();
-        String uri = doc.getSource().getOrDefault("uri","").toString();
-        String docAbstract = doc.getSource().getOrDefault("abstract", "").toString();
+        String title = getSourceFieldValueOrDefault(doc, "title", "");
+        String uri = getSourceFieldValueOrDefault(doc, "uri", "");
+        String docAbstract = getSourceFieldValueOrDefault(doc, "abstract", "");
 
         logger.log(Level.INFO, "FOUND: "+ uri + " " + title);
 
