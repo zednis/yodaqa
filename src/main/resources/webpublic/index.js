@@ -14,7 +14,7 @@ function showSummary(container, summary) {
 	container.append("<p><b>Answer type:</b> " + summary.lats.join(', ') + "</p>");
 	summary.concepts.forEach(function(c) {
 		container.append('<p class="concept">'
-				+ '<img src="/wikipedia-w-logo.png" alt="W" class="wlogo" />'
+				+ '<img src="wikipedia-w-logo.png" alt="W" class="wlogo" />'
 				+ ' <a href="http://en.wikipedia.org/?curid='+c.pageId+'" target="_blank">'
 				+ c.title + '</a></p>'); // TODO also include the first sentence?
 	});
@@ -23,21 +23,34 @@ function showSummary(container, summary) {
 /* Create a box with answer sources. */
 function showSources(container, sources) {
 	container.empty();
-        $.each(sources, function(sid, source) {
+	$.each(sources, function(sid, source) {
 		var state_stags = ['<i>', '<b>', ''];
 		var state_etags = ['</i>', '</b>', ''];
-        if (source.origin != "document title") {
-		if (source.type == "enwiki") {
-			url = 'http://en.wikipedia.org/?curid=' + source.pageId;
-		} else {
-			url = source.URL;
+		if (source.origin != "document title") {
+			if (source.type == "enwiki") {
+				url = 'http://en.wikipedia.org/?curid=' + source.pageId;
+			} else {
+				url = source.URL;
+			}
+
+			var logo = "";
+
+			if(source.type == "enwiki") {
+				logo = '<img src="wikipedia-w-logo.png" alt="W" class="wlogo" />&nbsp;';
+			} else if(source.type == "agu abstract") {
+				logo = '<img src="agu-blue-logo.png" alt="AGU" class="agu_logo" />&nbsp;';
+			} else if(source.type == "freebase") {
+				logo = '<img src="freebase-logo.png" alt="Freebase" class="freebase_logo" />&nbsp;';
+			} else if (source.type == "dbpedia") {
+				logo = '<img src="dbpedia_logo.png" alt="DBpedia" class="dbpedia_logo" />&nbsp;';
+			}
+
+			container.append('<p class="source">'
+				+ logo
+				+ '<a href="' + url + '" target="_blank">'
+				+ state_stags[source.state] + source.title + state_etags[source.state]
+				+ '</a> (' + source.type + ' ' + source.origin + ')</p>'); // TODO also include the first sentence?
 		}
-            container.append('<p class="source">'
-                + '<img src="/wikipedia-w-logo.png" alt="W" class="wlogo" />'
-                + ' <a href="' + url + '" target="_blank">'
-                + state_stags[source.state] + source.title + state_etags[source.state]
-                + '</a> (' + source.type + ' ' + source.origin + ')</p>'); // TODO also include the first sentence?
-        }
 	});
 }
 
@@ -48,37 +61,50 @@ function showAnswers(container, answers, snippets, sources) {
 	answers.forEach(function(a) {
 		// FIXME: also deal with < > &
 		text = a.text.replace(/"/g, "&#34;");
-        var str="";
+		var str="";
+		var logo = "";
 
-        for(var index = 0; index< a.snippetIDs.length; index++) {
-            //origin is (fulltext)/(title-in-clue)/(documented search)
-	    source = sources[snippets[a.snippetIDs[index]].sourceID]
-            str += "(" + source.type + " " + source.origin + ") \n";
-            str += source.title + " \n";
+		for(var index = 0; index< a.snippetIDs.length; index++) {
+			//origin is (fulltext)/(title-in-clue)/(documented search)
+			source = sources[snippets[a.snippetIDs[index]].sourceID]
+			str += "(" + source.type + " " + source.origin + ") \n";
+			str += source.title + " \n";
 
-            //add either wikipedia document ID or source URL
-	    if (source.type == "enwiki") {
-		    str += source.pageId + "\n";
-	    } else {
-		    str += source.URL + "\n";
-	    }
+			//add either wikipedia document ID or source URL
+			if (source.type == "enwiki") {
+				str += source.pageId + "\n";
+			} else {
+				str += source.URL + "\n";
+			}
 
-            //add either passage text or property label
-            if (!(typeof (snippets[a.snippetIDs[index]].passageText) ==="undefined")) {
-                str += snippets[a.snippetIDs[index]].passageText.replace(/"/g, "&#34;") + "\n";
-            }
-            else if (!(typeof (snippets[a.snippetIDs[index]].propertyLabel) ==="undefined")) {
-                str += snippets[a.snippetIDs[index]].propertyLabel;
-                if (!(typeof (snippets[a.snippetIDs[index]].witnessLabel) ==="undefined")) {
-		    str += " (" + snippets[a.snippetIDs[index]].witnessLabel + ")";
+			// TODO use CSS to include logo based on class
+			if(source.type == "enwiki") {
+				logo = '<img src="wikipedia-w-logo.png" alt="W" class="wlogo" />&nbsp;';
+			} else if(source.type == "agu abstract") {
+				logo = '<img src="agu-blue-logo.png" alt="AGU" class="agu_logo" />&nbsp;';
+			} else if(source.type == "freebase") {
+				logo = '<img src="freebase-logo.png" alt="Freebase" class="freebase_logo" />&nbsp;';
+			} else if (source.type == "dbpedia") {
+				logo = '<img src="dbpedia_logo.png" alt="DBpedia" class="dbpedia_logo" />&nbsp;';
+			}
+
+			//add either passage text or property label
+			if (!(typeof (snippets[a.snippetIDs[index]].passageText) ==="undefined")) {
+				str += snippets[a.snippetIDs[index]].passageText.replace(/"/g, "&#34;") + "\n";
+			}
+			else if (!(typeof (snippets[a.snippetIDs[index]].propertyLabel) ==="undefined")) {
+				str += snippets[a.snippetIDs[index]].propertyLabel;
+				if (!(typeof (snippets[a.snippetIDs[index]].witnessLabel) ==="undefined")) {
+					str += " (" + snippets[a.snippetIDs[index]].witnessLabel + ")";
+				}
+				str += "\n";
+			}
 		}
-		str += "\n";
-            }
-        }
+
 		container.append('<tr><td class="i">'+i+'.</td>'
-				+ '<td class="text" title="'+str+'">'+text+'</td>'
-				+ '<td class="scorebar">'+score_bar(a.confidence)+'</td>'
-				+ '<td class="score">'+(a.confidence*100).toFixed(1)+'%</td></tr>');
+			+ '<td class="text" title="'+str+'">'+logo+text+'</td>'
+			+ '<td class="scorebar">'+score_bar(a.confidence)+'</td>'
+			+ '<td class="score">'+(a.confidence*100).toFixed(1)+'%</td></tr>');
 		i++;
 	});
 }

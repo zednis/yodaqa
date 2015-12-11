@@ -129,6 +129,7 @@ public class SolrDocPrimarySearch extends JCasMultiplier_ImplBase {
 
 			jcas.createView("Answer");
 			JCas canAnswerView = jcas.getView("Answer");
+
 			if (doc != null) {
 				documentToAnswer(canAnswerView, doc, !docIter.hasNext() ? i : 0, questionView);
 			} else {

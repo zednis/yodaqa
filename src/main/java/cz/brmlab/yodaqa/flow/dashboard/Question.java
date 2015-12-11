@@ -105,7 +105,7 @@ public class Question {
 		return sourceID;
 	}
 	/** Reset the answer list, typically when have scored them.
-	 * @param answer the answer to set */
+	 * @param answers the answer to set */
 	public synchronized void setAnswers(List<QuestionAnswer> answers) {
 		this.answers = answers;
 		gen_answers ++;
