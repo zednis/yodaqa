@@ -68,6 +68,21 @@ header h1 {
 	vertical-align: baseline;
 }
 
+.agu_logo {
+	width: 1.1em;
+	vertical-align: baseline;
+}
+
+.freebase_logo {
+	width: 1.1em;
+	vertical-align: baseline;
+}
+
+.dbpedia_logo {
+	width: 1.1em;
+	vertical-align: baseline;
+}
+
 #sources {
 	border: 1pt solid black;
 	padding: 1ex 1em;
